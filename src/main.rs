@@ -5,12 +5,13 @@ use bitcoin_hashes::{sha256, Hash};
 
 fn main(){
     let (seckey, pubkey) = generate_keys();
-    let msg = b"This is some message";
-    let sig = sign(msg, seckey);
-    verify(msg, sig, pubkey);
-    let (recovery_id, sig_compact) = sign_compact(msg, seckey);
-    verify(msg, sig_compact.clone(), pubkey);
-    recover(msg, sig_compact, recovery_id);
+    let digest = b"This is some message";
+    let sig = sign(digest, seckey);
+    let serialize_sig = sig.serialize_compact().to_vec();
+    verify(digest, serialize_sig, pubkey);
+    let (recovery_id, sig_compact) = sign_compact(digest, seckey);
+    verify(digest, sig_compact.clone(), pubkey);
+    recover(digest, sig_compact, recovery_id);
 }
 
 /// https://github.com/rust-bitcoin/rust-secp256k1/blob/master/examples/generate_keys.rs
@@ -30,62 +31,59 @@ fn generate_keys() -> (SecretKey, PublicKey) {
     (seckey, pubkey)
 }
 ///https://github.com/rust-bitcoin/rust-secp256k1/blob/master/examples/sign_verify.rs
-fn sign(msg: &[u8], seckey: SecretKey) -> Vec<u8> {
+fn sign(digest: &[u8], seckey: SecretKey) -> Signature {
     let secp = Secp256k1::new();
-    let signature = do_sign(&secp, msg, seckey).unwrap();
+    let signature = do_sign(&secp, digest, seckey).unwrap();
     println!("signature: {:?}", signature);
-    let serialized_sig = signature.serialize_compact();
-    println!("serialized sig: {:?}", serialized_sig);
-    serialized_sig.to_vec()
+    signature
 }
 
-fn sign_compact(msg: &[u8], seckey: SecretKey) -> (RecoveryId, Vec<u8>) {
+fn sign_compact(digest: &[u8], seckey: SecretKey) -> (RecoveryId, Vec<u8>) {
     let secp = Secp256k1::new();
-    let signature = do_sign_compact(&secp, msg, seckey).unwrap();
+    let signature = do_sign_compact(&secp, digest, seckey).unwrap();
     let (recovery_id, serialized_sig) = signature.serialize_compact();
     println!("signature compacted: {:?}", serialized_sig);
     println!("recovery id: {:?}", recovery_id);
     (recovery_id, serialized_sig.to_vec())
 }
 
-fn verify(msg: &[u8], sig: Vec<u8>, pubkey: PublicKey){
+fn verify(digest: &[u8], sig: Vec<u8>, pubkey: PublicKey){
     let secp = Secp256k1::new();
-    let result = do_verify(&secp, msg, sig, pubkey).unwrap();
+    let result = do_verify(&secp, digest, sig, pubkey).unwrap();
     println!("verify result: {:?}", result)
 }
 
-fn recover(msg: &[u8],sig: Vec<u8>,recovery_id: RecoveryId) {
+fn recover(digest: &[u8],sig: Vec<u8>,recovery_id: RecoveryId) {
     let secp = Secp256k1::new();
-    let pubkey = do_recover(&secp, msg, sig, recovery_id);
+    let pubkey = do_recover(&secp, digest, sig, recovery_id);
     println!("pubkey recovered: {:?}", pubkey)
 }
 
-fn do_verify<C: Verification>(secp: &Secp256k1<C>, msg: &[u8], sig: Vec<u8>, pubkey: PublicKey) -> Result<bool, Error> {
-    let msg = sha256::Hash::hash(msg);
-    let msg = Message::from_slice(&msg)?;
+fn do_sign<C: Signing>(secp: &Secp256k1<C>, digest: &[u8], seckey: SecretKey) -> Result<Signature, Error> {
+    let digest = sha256::Hash::hash(digest);
+    let digest = Message::from_slice(&digest)?;
+    Ok(secp.sign(&digest, &seckey))
+}
+
+fn do_verify<C: Verification>(secp: &Secp256k1<C>, digest: &[u8], sig: Vec<u8>, pubkey: PublicKey) -> Result<bool, Error> {
+    let digest = sha256::Hash::hash(digest);
+    let digest = Message::from_slice(&digest)?;
     let sig = Signature::from_compact(&sig)?;
 
-    Ok(secp.verify(&msg, &sig, &pubkey).is_ok())
+    Ok(secp.verify(&digest, &sig, &pubkey).is_ok())
 }
 
-fn do_sign<C: Signing>(secp: &Secp256k1<C>, msg: &[u8], seckey: SecretKey) -> Result<Signature, Error> {
-    let msg = sha256::Hash::hash(msg);
-    let msg = Message::from_slice(&msg)?;
-    Ok(secp.sign(&msg, &seckey))
+fn do_sign_compact<C: Signing>(secp: &Secp256k1<C>, digest: &[u8], seckey: SecretKey) -> Result<RecoverableSignature, Error> {
+    let digest = sha256::Hash::hash(digest);
+    let digest = Message::from_slice(&digest)?;
+    Ok(secp.sign_recoverable(&digest, &seckey))
 }
 
-
-fn do_sign_compact<C: Signing>(secp: &Secp256k1<C>, msg: &[u8], seckey: SecretKey) -> Result<RecoverableSignature, Error> {
-    let msg = sha256::Hash::hash(msg);
-    let msg = Message::from_slice(&msg)?;
-    Ok(secp.sign_recoverable(&msg, &seckey))
-}
-
-fn do_recover<C: Verification>(secp: &Secp256k1<C>,msg: &[u8],sig: Vec<u8>,recovery_id: RecoveryId) -> Result<PublicKey, Error> {
-    let msg = sha256::Hash::hash(msg);
-    let msg = Message::from_slice(&msg)?;
+fn do_recover<C: Verification>(secp: &Secp256k1<C>,digest: &[u8],sig: Vec<u8>,recovery_id: RecoveryId) -> Result<PublicKey, Error> {
+    let digest = sha256::Hash::hash(digest);
+    let digest = Message::from_slice(&digest)?;
     let sig = RecoverableSignature::from_compact(&sig, recovery_id)?;
 
-    secp.recover(&msg, &sig)
+    secp.recover(&digest, &sig)
 }
 
