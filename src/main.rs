@@ -7,9 +7,9 @@ fn main(){
     let (seckey, pubkey) = generate_keys();
     let msg = b"This is some message";
     let sig = sign(msg, seckey);
-    verify_sig(msg, sig, pubkey);
+    verify(msg, sig, pubkey);
     let (recovery_id, sig_compact) = sign_compact(msg, seckey);
-    verify_sig(msg, sig_compact.clone(), pubkey);
+    verify(msg, sig_compact.clone(), pubkey);
     recover(msg, sig_compact, recovery_id);
 }
 
@@ -48,7 +48,7 @@ fn sign_compact(msg: &[u8], seckey: SecretKey) -> (RecoveryId, Vec<u8>) {
     (recovery_id, serialized_sig.to_vec())
 }
 
-fn verify_sig(msg: &[u8], sig: Vec<u8>, pubkey: PublicKey){
+fn verify(msg: &[u8], sig: Vec<u8>, pubkey: PublicKey){
     let secp = Secp256k1::new();
     let result = do_verify(&secp, msg, sig, pubkey).unwrap();
     println!("verify result: {:?}", result)
